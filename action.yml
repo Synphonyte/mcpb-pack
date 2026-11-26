@@ -1,0 +1,201 @@
+name: Pack an MCP Bundle
+description: Pack a compiled MCP server as an MCP Bundle (.mcpb) that Claude Desktop installs with one click
+author: Synphonyte
+branding:
+  icon: package
+  color: orange
+
+# Packs the binary a job just built for the job's own OS and CPU, so a matrix
+# of runners gives one bundle per platform:
+#
+#     - run: cargo build --release --locked
+#     - uses: Synphonyte/mcpb-pack@v0
+#       id: mcpb
+#       with:
+#         executable: target/release/my-server
+#     - uses: actions/upload-artifact@v4
+#       with:
+#         name: ${{ steps.mcpb.outputs.name }}
+#         path: ${{ steps.mcpb.outputs.bundle }}
+#
+# The `mcpb` command is downloaded from the Synphonyte/mcpb releases, or built
+# with cargo when a release has no binary for the runner.
+
+inputs:
+  manifest:
+    description: The manifest.json, or the directory that holds it. Its paths are read relative to it.
+    default: manifest.json
+  executable:
+    description: >-
+      The built server binary, such as target/release/my-server, relative to the workspace.
+      `.exe` is added on Windows when the path has none. Defaults to the file the manifest's
+      entry point names.
+    default: ""
+  platform:
+    description: darwin, linux or win32. Defaults to the runner's OS.
+    default: ""
+  arch:
+    description: >-
+      The binary's CPU architecture, such as x64 or arm64. Defaults to the runner's; set it
+      when the job cross-compiles, as for x86_64-apple-darwin on an arm64 Mac.
+    default: ""
+  out:
+    description: >-
+      Where to write the bundle, or a directory ending in / to write it to. The bundle is
+      named <name>-<version>-<platform>-<arch>.mcpb unless this names a file.
+    default: ""
+  args:
+    description: More arguments for `mcpb pack`, such as `--tree assets --data data`.
+    default: ""
+  mcpb-version:
+    description: >-
+      The mcpb release to run, such as 0.3.0, or `latest`. `git` builds the newest commit of
+      Synphonyte/mcpb with cargo, for trying what is not released yet.
+    default: latest
+
+outputs:
+  bundle:
+    description: The path of the bundle.
+    value: ${{ steps.pack.outputs.bundle }}
+  name:
+    description: The bundle's file name, which suits an artifact name.
+    value: ${{ steps.pack.outputs.name }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install mcpb
+      shell: bash
+      env:
+        MCPB_VERSION: ${{ inputs.mcpb-version }}
+      run: |
+        set -euo pipefail
+        root="$RUNNER_TEMP/mcpb-action"
+        mkdir -p "$root/bin"
+
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) target=x86_64-unknown-linux-musl ;;
+          Linux-ARM64) target=aarch64-unknown-linux-musl ;;
+          macOS-X64) target=x86_64-apple-darwin ;;
+          macOS-ARM64) target=aarch64-apple-darwin ;;
+          Windows-X64) target=x86_64-pc-windows-msvc ;;
+          Windows-ARM64) target=aarch64-pc-windows-msvc ;;
+          *) target="" ;;
+        esac
+
+        version="${MCPB_VERSION#v}"
+
+        # Where a release has no binary for this runner, build that release.
+        build() {
+          case "$version" in
+            git)
+              echo "building mcpb from https://github.com/Synphonyte/mcpb"
+              cargo install --locked --quiet --git https://github.com/Synphonyte/mcpb mcpb --root "$root" ;;
+            latest)
+              echo "building the newest mcpb from crates.io"
+              cargo install --locked --quiet mcpb --root "$root" ;;
+            *)
+              echo "building mcpb $version from crates.io"
+              cargo install --locked --quiet mcpb --version "$version" --root "$root" ;;
+          esac
+        }
+
+        download() {
+          [ -n "$target" ] || return 1
+          local suffix=tgz
+          [ "$RUNNER_OS" = Windows ] && suffix=zip
+          local releases=https://github.com/Synphonyte/mcpb/releases
+          local url="$releases/download/v$version/mcpb-$target.$suffix"
+          [ "$version" = latest ] && url="$releases/latest/download/mcpb-$target.$suffix"
+          local archive="$root/mcpb.$suffix"
+          curl -fsSL --retry 3 -o "$archive" "$url" || return 1
+          echo "downloaded $url"
+          if [ "$suffix" = zip ]; then
+            pwsh -NoProfile -Command "Expand-Archive -Force -Path '$(cygpath -w "$archive")' -DestinationPath '$(cygpath -w "$root/bin")'"
+          else
+            tar -xzf "$archive" -C "$root/bin"
+          fi
+        }
+
+        if [ "$version" = git ] || ! download; then
+          build
+        fi
+
+        echo "$root/bin" >> "$GITHUB_PATH"
+        "$root/bin/mcpb" --version
+
+    - name: Pack the bundle
+      id: pack
+      shell: bash
+      env:
+        MANIFEST: ${{ inputs.manifest }}
+        EXECUTABLE: ${{ inputs.executable }}
+        PLATFORM: ${{ inputs.platform }}
+        ARCH: ${{ inputs.arch }}
+        OUT: ${{ inputs.out }}
+        ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+
+        platform="$PLATFORM"
+        if [ -z "$platform" ]; then
+          case "$RUNNER_OS" in
+            macOS) platform=darwin ;;
+            Linux) platform=linux ;;
+            Windows) platform=win32 ;;
+            *) echo "::error::no MCPB platform for $RUNNER_OS, set the platform input"; exit 1 ;;
+          esac
+        fi
+        arch="$ARCH"
+        if [ -z "$arch" ]; then
+          case "$RUNNER_ARCH" in
+            X64) arch=x64 ;;
+            ARM64) arch=arm64 ;;
+            *) echo "::error::no architecture name for $RUNNER_ARCH, set the arch input"; exit 1 ;;
+          esac
+        fi
+
+        command=(mcpb pack "$MANIFEST" --platform "$platform" --arch "$arch")
+        if [ -n "$EXECUTABLE" ]; then
+          executable="$EXECUTABLE"
+          # Git Bash reports `foo` as existing when only `foo.exe` does, so
+          # look for the `.exe` first rather than for `foo` going missing.
+          case "$executable" in
+            *.exe) ;;
+            *) if [ "$platform" = win32 ] && [ -f "$executable.exe" ]; then executable="$executable.exe"; fi ;;
+          esac
+          if [ ! -f "$executable" ]; then
+            echo "::error::the executable $executable does not exist; build it before this step"
+            exit 1
+          fi
+          # The command reads paths relative to the manifest, so make it absolute.
+          executable="$(cd "$(dirname "$executable")" && pwd)/$(basename "$executable")"
+          command+=(--executable "$executable")
+        fi
+        if [ -n "$OUT" ]; then
+          # A path ending in / is a directory, which the bundle is named into.
+          case "$OUT" in
+            */) mkdir -p "$OUT" ;;
+            *) mkdir -p "$(dirname "$OUT")" ;;
+          esac
+          command+=(-o "$OUT")
+        fi
+        # Word splitting is the point: ARGS holds several arguments.
+        # shellcheck disable=SC2206
+        command+=($ARGS)
+
+        echo "${command[*]}"
+        result="$("${command[@]}")"
+        echo "$result"
+
+        # `mcpb pack` reports `packed <path> (<n> files, ...)`.
+        bundle="$(printf '%s\n' "$result" | sed -n 's/^packed \(.*\) ([0-9]* files, .*$/\1/p')"
+        if [ -z "$bundle" ] || [ ! -f "$bundle" ]; then
+          echo "::error::could not find the bundle mcpb packed"
+          exit 1
+        fi
+        mcpb validate "$bundle"
+        mcpb info "$bundle"
+
+        echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+        echo "name=$(basename "$bundle")" >> "$GITHUB_OUTPUT"

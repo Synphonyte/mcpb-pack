@@ -1,0 +1,58 @@
+name: CI
+
+# Runs the action as a user's workflow would: a binary built on the runner,
+# packed for its OS and CPU, then checked by the protocol's own CLI. Windows
+# shows the action finds the `.exe` behind a path without one.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          [
+            ubuntu-latest,
+            ubuntu-24.04-arm,
+            macos-latest,
+            windows-latest,
+            windows-11-arm,
+          ]
+        # The newest commit of mcpb, which the next release is cut from. Add
+        # `latest` once a release (0.3.0) has the binaries and `--platform`.
+        mcpb: [git]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --locked
+        working-directory: test
+
+      - uses: ./
+        id: mcpb
+        with:
+          manifest: test/manifest.json
+          executable: test/target/release/test-server
+          out: dist/
+          mcpb-version: ${{ matrix.mcpb }}
+
+      - name: Check the outputs and the bundle
+        shell: bash
+        run: |
+          bundle="${{ steps.mcpb.outputs.bundle }}"
+          name="${{ steps.mcpb.outputs.name }}"
+          test -f "$bundle"
+          case "$name" in
+            test-server-0.1.0-linux-*|test-server-0.1.0-darwin-*|test-server-0.1.0-win32-*) ;;
+            *) echo "::error::$name is not named after one platform"; exit 1 ;;
+          esac
+          npx -y @anthropic-ai/mcpb@latest unpack "$bundle" unpacked
+          npx -y @anthropic-ai/mcpb@latest validate unpacked
