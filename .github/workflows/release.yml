@@ -1,12 +1,12 @@
 name: Release
 
-# Moves the major version tag users name (`uses: Synphonyte/mcpb-pack@v0`) to
+# Moves the major version tag users name (`uses: Synphonyte/mcpb-pack@v1`) to
 # each release, and creates the GitHub release the Marketplace lists:
 #
-#     git tag -a v0.1.0 -m v0.1.0
-#     git push origin v0.1.0
+#     git tag -a v1.0.0 -m v1.0.0
+#     git push origin v1.0.0
 #
-# Not `v*`: the `v0` tag this moves would match it. A tag pushed with the
+# Not `v*`: the `v1` tag this moves would match it. A tag pushed with the
 # workflow's token starts no workflow of its own either way.
 
 on:
