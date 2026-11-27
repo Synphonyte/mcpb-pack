@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: cargo build --release --locked
-      - uses: Synphonyte/mcpb-pack@v0
+      - uses: Synphonyte/mcpb-pack@v1
         id: mcpb
         with:
           executable: target/release/my-server # `.exe` is added on Windows
@@ -56,11 +56,11 @@ has none for the runner.
 
 ## Releasing
 
-Tag and push; `.github/workflows/release.yml` moves `v0` to the tag and creates a GitHub release:
+Tag and push; `.github/workflows/release.yml` moves `v1` to the tag and creates a GitHub release:
 
 ```sh
-git tag -a v0.1.0 -m v0.1.0
-git push origin v0.1.0
+git tag -a v1.0.0 -m v1.0.0
+git push origin v1.0.0
 ```
 
 To list a release on the GitHub Marketplace, edit it on GitHub and tick **Publish this Action to

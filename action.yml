@@ -9,7 +9,7 @@ branding:
 # of runners gives one bundle per platform:
 #
 #     - run: cargo build --release --locked
-#     - uses: Synphonyte/mcpb-pack@v0
+#     - uses: Synphonyte/mcpb-pack@v1
 #       id: mcpb
 #       with:
 #         executable: target/release/my-server
