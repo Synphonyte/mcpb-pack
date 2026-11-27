@@ -1,0 +1,21 @@
+{
+  "manifest_version": "0.3",
+  "name": "test-server",
+  "version": "0.1.0",
+  "description": "What CI packs with the action on each platform.",
+  "author": {
+    "name": "Synphonyte"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/test-server",
+    "mcp_config": {
+      "command": "${__dirname}/server/test-server",
+      "args": [],
+      "env": {}
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"]
+  }
+}

@@ -1,0 +1,35 @@
+name: Release
+
+# Moves the major version tag users name (`uses: Synphonyte/mcpb-pack@v0`) to
+# each release, and creates the GitHub release the Marketplace lists:
+#
+#     git tag -a v0.1.0 -m v0.1.0
+#     git push origin v0.1.0
+#
+# Not `v*`: the `v0` tag this moves would match it. A tag pushed with the
+# workflow's token starts no workflow of its own either way.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write # to move the tag and create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Move the major version tag
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$major"
+
+      # The Marketplace listing is a checkbox on the release page; see the README.
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
